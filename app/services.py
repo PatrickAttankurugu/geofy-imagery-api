@@ -379,7 +379,7 @@ class ImageryService:
             
             # Generate analysis
             print(f"[analyze_with_gemini] Sending request to Gemini API...")
-            response = model.generate_content([prompt] + images)
+            response = model.generate_content([prompt] + images,request_options={'timeout': 300})
             print(f"[analyze_with_gemini] Response received")
             
             # Parse response - handle potential markdown wrapping
