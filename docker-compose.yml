@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  geofy-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: geofy-imagery-api
+    restart: unless-stopped
+    
+    # Port mapping
+    ports:
+      - "8006:8006"
+    
+    # Environment variables (loaded from .env file)
+    env_file:
+      - .env
+    
+    # Volume mounts for persistence
+    volumes:
+      - ./storage:/app/storage
+      - ./geofy_imagery.db:/app/geofy_imagery.db
+      - ./logs:/app/logs
+    
+    # Resource limits for t3.xlarge (4 vCPU, 16GB RAM)
+    deploy:
+      resources:
+        limits:
+          cpus: '3.5'      # Reserve 0.5 CPU for system
+          memory: 14G      # Reserve 2GB for system
+        reservations:
+          cpus: '2.0'
+          memory: 8G
+    
+    # Shared memory (important for image processing)
+    shm_size: 2gb
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network configuration
+    networks:
+      - geofy-network
+
+networks:
+  geofy-network:
+    driver: bridge
