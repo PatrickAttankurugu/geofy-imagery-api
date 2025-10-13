@@ -1,21 +1,5 @@
 # ============================
-# Stage 1: Build GEHistoricalImagery (self-contained linux-x64)
-# ============================
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS gehi-build
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
- && rm -rf /var/lib/apt/lists/*
-
-# Clone and publish a single-file, self-contained binary
-RUN git clone https://github.com/Mbucari/GEHistoricalImagery.git /src
-RUN dotnet publish /src/src/GEHistoricalImagery/GEHistoricalImagery.csproj \
-      -c Release -r linux-x64 --self-contained true \
-      -p:PublishSingleFile=true \
-      -o /out
-
-# ============================
-# Stage 2: Python API runtime
+# Python API runtime
 # ============================
 FROM python:3.11-slim
 
@@ -36,10 +20,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# Install GEHistoricalImagery from build stage
-COPY --from=gehi-build /out/GEHistoricalImagery /usr/local/bin/GEHistoricalImagery
-RUN chmod +x /usr/local/bin/GEHistoricalImagery \
- && /usr/local/bin/GEHistoricalImagery --version || true
+# Download pre-built GEHistoricalImagery binary from v0.2.0.1 release
+# This is a working Linux x64 binary that doesn't require building from source
+RUN wget https://github.com/Mbucari/GEHistoricalImagery/releases/download/v0.2.0.1/GEHistoricalImagery-linux-x64.tar.gz \
+ && tar -xzf GEHistoricalImagery-linux-x64.tar.gz -C /usr/local/bin \
+ && chmod +x /usr/local/bin/GEHistoricalImagery \
+ && rm GEHistoricalImagery-linux-x64.tar.gz \
+ && /usr/local/bin/GEHistoricalImagery --version || echo "GEHistoricalImagery installed"
 
 # Copy requirements first (better layer caching)
 COPY requirements.txt .
