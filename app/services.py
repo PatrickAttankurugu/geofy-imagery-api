@@ -24,7 +24,7 @@ class ImageryService:
     """All imagery processing logic"""
     
     def __init__(self):
-        # CRITICAL: Use absolute path so CLI tool can find the directory
+        # CRITICAL FIX: Use absolute path so CLI tool can find the directory
         self.temp_dir = Path(settings.TEMP_STORAGE_PATH).resolve()
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         print(f"[ImageryService] Initialized with temp_dir: {self.temp_dir}")
@@ -57,7 +57,7 @@ class ImageryService:
             print(f"[check_availability] Executing command:")
             print(f"  {' '.join(cmd)}")
             
-            # Capture as bytes to handle UTF-16 encoding
+            # FIX: Capture as bytes to handle UTF-16 encoding
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -80,10 +80,9 @@ class ImageryService:
                 print(f"[check_availability] ERROR: {error_msg}")
                 raise Exception(error_msg)
             
-            # Decode output - try UTF-16LE first, fallback to UTF-8
+            # FIX: Decode UTF-16LE output and strip null bytes
             try:
                 stdout_text = result.stdout.decode('utf-16-le', errors='ignore')
-                # Remove null bytes that are artifacts of UTF-16 encoding
                 stdout_text = stdout_text.replace('\x00', '')
                 print(f"[check_availability] Decoded as UTF-16LE")
             except:
@@ -148,7 +147,7 @@ class ImageryService:
                 '--upper-right', upper_right,
                 '--date', date,
                 '--zoom', str(zoom),
-                '--output', str(output_path),  # Already absolute from __init__
+                '--output', str(output_path),
                 '--provider', 'TM'
             ]
             
