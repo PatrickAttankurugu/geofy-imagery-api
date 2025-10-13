@@ -1,13 +1,13 @@
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from .models import JobStatus  # Import JobStatus from models instead of duplicating
+from .models import JobStatus
 
 # Request Schemas
 class CaptureRequest(BaseModel):
     coordinates: str = Field(..., description="Latitude,Longitude")
     locationName: str = Field(..., description="Human-readable location name")
-    zoomLevel: int = Field(250, ge=100, le=1000)
+    zoomLevel: int = Field(18, ge=0, le=23, description="Map zoom level (0-23, default 18 for city detail)")
     callbackUrl: Optional[str] = None
     
     @validator('coordinates')
