@@ -27,16 +27,22 @@ class ImageryService:
         self.temp_dir = Path(settings.TEMP_STORAGE_PATH)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         
-    def check_availability(self, lat: float, lon: float) -> List[str]:
+    def check_availability(self, lat: float, lon: float, zoom: int = 18) -> List[str]:
         """Check available dates using GEHistoricalImagery"""
         try:
+            # Create a small bounding box around the point (0.001 degree ~= 100m)
+            offset = 0.001
+            lower_left = f"{lat - offset},{lon - offset}"
+            upper_right = f"{lat + offset},{lon + offset}"
+            
             result = subprocess.run(
                 [
                     settings.GEHISTORICALIMAGERY_PATH,
                     'availability',
-                    '--lat', str(lat),
-                    '--lon', str(lon),
-                    '--provider', 'google'
+                    '--lower-left', lower_left,
+                    '--upper-right', upper_right,
+                    '--zoom', str(zoom),
+                    '--provider', 'TM'  # Time Machine = Google Earth
                 ],
                 capture_output=True,
                 text=True,
@@ -68,16 +74,21 @@ class ImageryService:
         output_path = self.temp_dir / f"{job_id}_{date}.tif"
         
         try:
+            # Create a small bounding box around the point
+            offset = 0.001
+            lower_left = f"{lat - offset},{lon - offset}"
+            upper_right = f"{lat + offset},{lon + offset}"
+            
             result = subprocess.run(
                 [
                     settings.GEHISTORICALIMAGERY_PATH,
                     'download',
-                    '--lat', str(lat),
-                    '--lon', str(lon),
+                    '--lower-left', lower_left,
+                    '--upper-right', upper_right,
                     '--date', date,
                     '--zoom', str(zoom),
                     '--output', str(output_path),
-                    '--provider', 'google'
+                    '--provider', 'TM'
                 ],
                 capture_output=True,
                 text=True,
@@ -248,6 +259,10 @@ class ImageryService:
         dates = []
         
         try:
+            # The output format needs to be determined by running the actual command
+            # For now, let's look for date patterns and also print the raw output
+            print(f"Availability raw output:\n{output}")
+            
             # Split output into lines
             lines = output.strip().split('\n')
             
@@ -262,22 +277,33 @@ class ImageryService:
             # Remove duplicates and sort
             dates = sorted(list(set(dates)))
             
-            # If no dates found, return empty list
+            # If no dates found, try alternative parsing
             if not dates:
-                print(f"Warning: No dates parsed from output: {output[:200]}")
-                # Return mock dates for testing only
-                return ['2018-01-01', '2019-01-01', '2020-01-01', 
-                        '2021-01-01', '2022-01-01', '2023-01-01',
-                        '2024-01-01', '2025-01-01']
+                # Look for other date formats like YYYY/MM/DD or YYYYMMDD
+                alt_pattern = r'\d{4}[/-]\d{2}[/-]\d{2}|\d{8}'
+                for line in lines:
+                    matches = re.findall(alt_pattern, line)
+                    for match in matches:
+                        # Convert to YYYY-MM-DD format
+                        if '/' in match:
+                            dates.append(match.replace('/', '-'))
+                        elif '-' not in match and len(match) == 8:
+                            # YYYYMMDD format
+                            dates.append(f"{match[:4]}-{match[4:6]}-{match[6:]}")
+                        else:
+                            dates.append(match)
+                
+                dates = sorted(list(set(dates)))
+            
+            if not dates:
+                print(f"Warning: No dates parsed from availability output")
+                raise Exception("No imagery dates found for this location")
             
             return dates
             
         except Exception as e:
             print(f"Error parsing availability output: {e}")
-            # Return mock dates as fallback
-            return ['2018-01-01', '2019-01-01', '2020-01-01', 
-                    '2021-01-01', '2022-01-01', '2023-01-01',
-                    '2024-01-01', '2025-01-01']
+            raise Exception(f"Failed to parse availability dates: {str(e)}")
 
 class WebhookService:
     """Handle webhook callbacks"""
