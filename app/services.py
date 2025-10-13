@@ -467,42 +467,22 @@ class ImageryService:
             lines = output.strip().split('\n')
             print(f"[_parse_availability_output] Number of lines: {len(lines)}")
             
-            # Look for lines containing dates in YYYY-MM-DD format
+            # Look for dates in YYYY/MM/DD format (the actual format from GEHistoricalImagery)
             import re
-            date_pattern = r'\d{4}-\d{2}-\d{2}'
+            date_pattern = r'\d{4}/\d{2}/\d{2}'
             
             for idx, line in enumerate(lines):
                 matches = re.findall(date_pattern, line)
                 if matches:
                     print(f"  Line {idx}: Found {len(matches)} dates: {matches}")
-                    dates.extend(matches)
+                    # Convert YYYY/MM/DD to YYYY-MM-DD
+                    for match in matches:
+                        date_normalized = match.replace('/', '-')
+                        dates.append(date_normalized)
             
             # Remove duplicates and sort
             dates = sorted(list(set(dates)))
             print(f"[_parse_availability_output] After deduplication: {len(dates)} unique dates")
-            
-            # If no dates found, try alternative parsing
-            if not dates:
-                print(f"[_parse_availability_output] No YYYY-MM-DD dates found, trying alternative formats...")
-                
-                # Look for other date formats like YYYY/MM/DD or YYYYMMDD
-                alt_pattern = r'\d{4}[/-]\d{2}[/-]\d{2}|\d{8}'
-                for idx, line in enumerate(lines):
-                    matches = re.findall(alt_pattern, line)
-                    if matches:
-                        print(f"  Line {idx}: Found alternative dates: {matches}")
-                        for match in matches:
-                            # Convert to YYYY-MM-DD format
-                            if '/' in match:
-                                dates.append(match.replace('/', '-'))
-                            elif '-' not in match and len(match) == 8:
-                                # YYYYMMDD format
-                                dates.append(f"{match[:4]}-{match[4:6]}-{match[6:]}")
-                            else:
-                                dates.append(match)
-                
-                dates = sorted(list(set(dates)))
-                print(f"[_parse_availability_output] After alternative parsing: {len(dates)} dates")
             
             if not dates:
                 print(f"[_parse_availability_output] ERROR: No dates found in output")
