@@ -4,7 +4,7 @@ from typing import List
 import asyncio
 from datetime import datetime
 
-from .database import engine, Base, get_db
+from .database import engine, Base, get_db, SessionLocal
 from .models import Job, JobStatus
 from .schemas import (
     CaptureRequest, CaptureResponse, JobStatusResponse,
@@ -30,10 +30,16 @@ webhook_service = WebhookService()
 # Background processing function
 async def process_imagery_job(job_id: str, coordinates: str, zoom: int, callback_url: str = None):
     """Process imagery capture job"""
-    db = next(get_db())
-    job = db.query(Job).filter(Job.id == job_id).first()
+    # Create a new database session for this background task
+    db = SessionLocal()
     
     try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        
+        if not job:
+            print(f"Error: Job {job_id} not found")
+            return
+        
         # Update status
         job.status = JobStatus.PROCESSING
         job.progress = 10
@@ -59,12 +65,12 @@ async def process_imagery_job(job_id: str, coordinates: str, zoom: int, callback
         progress_per_year = 60 / len(dates_to_download)
         
         for idx, date in enumerate(dates_to_download):
-            # Download
+            # Download - returns path like: /temp/jobid_2018-01-01.tif
             tif_path = imagery_service.download_imagery(
                 lat, lon, date, zoom, job_id
             )
             
-            # Convert to PNG
+            # Convert to PNG - returns path like: /temp/jobid_2018-01-01.png
             png_path = imagery_service.convert_geotiff_to_png(tif_path)
             
             # Upload to Cloudinary
@@ -87,10 +93,13 @@ async def process_imagery_job(job_id: str, coordinates: str, zoom: int, callback
         job.progress = 85
         db.commit()
         
+        # Build correct image paths - should match what convert_geotiff_to_png returns
+        # Pattern: {job_id}_{date}.png where date is like "2018-01-01"
         image_paths = [
-            str(imagery_service.temp_dir / f"{job_id}_{d.replace('-', '')}.png")
+            str(imagery_service.temp_dir / f"{job_id}_{d}.png")
             for d in dates_to_download
         ]
+        
         ai_analysis = imagery_service.analyze_with_gemini(image_paths)
         
         # Save results
@@ -112,20 +121,31 @@ async def process_imagery_job(job_id: str, coordinates: str, zoom: int, callback
                 'images': results,
                 'aiAnalysis': ai_analysis
             }
-            await webhook_service.send_webhook(callback_url, webhook_payload)
+            try:
+                await webhook_service.send_webhook(callback_url, webhook_payload)
+            except Exception as webhook_error:
+                print(f"Webhook send failed: {webhook_error}")
         
     except Exception as e:
-        job.status = JobStatus.FAILED
-        job.error_message = str(e)
-        db.commit()
+        print(f"Job {job_id} failed: {str(e)}")
+        
+        # Get job again in case session was closed
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if job:
+            job.status = JobStatus.FAILED
+            job.error_message = str(e)
+            db.commit()
         
         # Send failure webhook
         if callback_url:
-            await webhook_service.send_webhook(callback_url, {
-                'jobId': job_id,
-                'status': 'failed',
-                'error': str(e)
-            })
+            try:
+                await webhook_service.send_webhook(callback_url, {
+                    'jobId': job_id,
+                    'status': 'failed',
+                    'error': str(e)
+                })
+            except Exception as webhook_error:
+                print(f"Failure webhook send failed: {webhook_error}")
     
     finally:
         db.close()
@@ -215,7 +235,7 @@ def get_imagery(job_id: str, db: Session = Depends(get_db)):
         "jobId": job.id,
         "location": job.location_name,
         "coordinates": job.coordinates,
-        "images": job.imagery_data.get('images', []),
+        "images": job.imagery_data.get('images', []) if job.imagery_data else [],
         "aiAnalysis": job.ai_analysis,
         "processingTime": processing_time
     }
@@ -230,7 +250,11 @@ def list_jobs(
     query = db.query(Job).order_by(Job.created_at.desc())
     
     if status:
-        query = query.filter(Job.status == status)
+        try:
+            status_enum = JobStatus(status)
+            query = query.filter(Job.status == status_enum)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
     
     jobs = query.limit(limit).all()
     

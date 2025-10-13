@@ -1,13 +1,7 @@
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from enum import Enum
-
-class JobStatus(str, Enum):
-    QUEUED = "queued"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
+from .models import JobStatus  # Import JobStatus from models instead of duplicating
 
 # Request Schemas
 class CaptureRequest(BaseModel):

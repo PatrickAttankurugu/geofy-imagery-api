@@ -9,13 +9,13 @@ engine = create_engine(
     connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
 )
 
-# Session
+# Session factory - used for creating new sessions
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Base for models
 Base = declarative_base()
 
-# Dependency for routes
+# Dependency for routes - yields a session and closes it after use
 def get_db():
     db = SessionLocal()
     try:

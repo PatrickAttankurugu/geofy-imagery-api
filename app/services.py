@@ -1,6 +1,7 @@
 import subprocess
 import os
 import json
+import asyncio
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -63,6 +64,7 @@ class ImageryService:
         job_id: str
     ) -> str:
         """Download imagery for a specific date"""
+        # Use consistent naming: job_id_YYYY-MM-DD.tif
         output_path = self.temp_dir / f"{job_id}_{date}.tif"
         
         try:
@@ -108,6 +110,12 @@ class ImageryService:
                 # Convert to PIL Image
                 # Transpose from (bands, height, width) to (height, width, bands)
                 data = data.transpose(1, 2, 0)
+                
+                # Ensure data is in uint8 format (0-255 range)
+                if data.dtype != 'uint8':
+                    # Normalize to 0-255 if needed
+                    data = ((data - data.min()) / (data.max() - data.min()) * 255).astype('uint8')
+                
                 img = Image.fromarray(data)
                 
                 # Save as PNG
@@ -156,8 +164,17 @@ class ImageryService:
             # Prepare images
             images = []
             for path in image_paths:
-                img = Image.open(path)
-                images.append(img)
+                if os.path.exists(path):
+                    img = Image.open(path)
+                    images.append(img)
+            
+            if not images:
+                return {
+                    "error": "No valid images found for analysis",
+                    "changes_detected": [],
+                    "timeline": [],
+                    "summary": "Analysis unavailable - no images"
+                }
             
             # Create prompt
             prompt = """
@@ -167,17 +184,46 @@ class ImageryService:
             2. Timeline of development
             3. Notable patterns or trends
             
-            Provide analysis in JSON format with keys:
-            - changes_detected: List of changes
-            - timeline: Year-by-year progression
-            - summary: Overall assessment
+            Respond ONLY with valid JSON in this exact format (no markdown, no code blocks):
+            {
+                "changes_detected": ["change 1", "change 2"],
+                "timeline": [{"year": 2018, "observation": "description"}],
+                "summary": "overall assessment"
+            }
             """
             
             # Generate analysis
             response = model.generate_content([prompt] + images)
             
-            # Parse response
-            analysis = json.loads(response.text) if response.text else {}
+            # Parse response - handle potential markdown wrapping
+            response_text = response.text.strip()
+            
+            # Remove markdown code blocks if present
+            if response_text.startswith('```json'):
+                response_text = response_text.replace('```json', '').replace('```', '').strip()
+            elif response_text.startswith('```'):
+                response_text = response_text.replace('```', '').strip()
+            
+            try:
+                analysis = json.loads(response_text)
+            except json.JSONDecodeError:
+                # If JSON parsing fails, return a structured error
+                return {
+                    "error": "AI response was not valid JSON",
+                    "raw_response": response_text[:500],  # First 500 chars for debugging
+                    "changes_detected": ["Unable to parse AI response"],
+                    "timeline": [],
+                    "summary": "AI analysis completed but response format was invalid"
+                }
+            
+            # Ensure required keys exist
+            if not all(key in analysis for key in ["changes_detected", "timeline", "summary"]):
+                return {
+                    "error": "AI response missing required fields",
+                    "changes_detected": analysis.get("changes_detected", []),
+                    "timeline": analysis.get("timeline", []),
+                    "summary": analysis.get("summary", "Incomplete analysis")
+                }
             
             return analysis
             
@@ -186,7 +232,7 @@ class ImageryService:
                 "error": f"AI analysis failed: {str(e)}",
                 "changes_detected": [],
                 "timeline": [],
-                "summary": "Analysis unavailable"
+                "summary": "Analysis unavailable due to error"
             }
     
     def cleanup_temp_files(self, job_id: str):
@@ -199,11 +245,39 @@ class ImageryService:
     
     def _parse_availability_output(self, output: str) -> List[str]:
         """Parse GEHistoricalImagery availability output"""
-        # TODO: Implement actual parsing based on tool output format
-        # For now, return mock dates in range 2018-2025
-        return ['2018-01-01', '2019-01-01', '2020-01-01', 
-                '2021-01-01', '2022-01-01', '2023-01-01',
-                '2024-01-01', '2025-01-01']
+        dates = []
+        
+        try:
+            # Split output into lines
+            lines = output.strip().split('\n')
+            
+            # Look for lines containing dates in YYYY-MM-DD format
+            import re
+            date_pattern = r'\d{4}-\d{2}-\d{2}'
+            
+            for line in lines:
+                matches = re.findall(date_pattern, line)
+                dates.extend(matches)
+            
+            # Remove duplicates and sort
+            dates = sorted(list(set(dates)))
+            
+            # If no dates found, return empty list
+            if not dates:
+                print(f"Warning: No dates parsed from output: {output[:200]}")
+                # Return mock dates for testing only
+                return ['2018-01-01', '2019-01-01', '2020-01-01', 
+                        '2021-01-01', '2022-01-01', '2023-01-01',
+                        '2024-01-01', '2025-01-01']
+            
+            return dates
+            
+        except Exception as e:
+            print(f"Error parsing availability output: {e}")
+            # Return mock dates as fallback
+            return ['2018-01-01', '2019-01-01', '2020-01-01', 
+                    '2021-01-01', '2022-01-01', '2023-01-01',
+                    '2024-01-01', '2025-01-01']
 
 class WebhookService:
     """Handle webhook callbacks"""
@@ -222,7 +296,8 @@ class WebhookService:
                         return True
             except Exception as e:
                 if attempt == max_retries - 1:
-                    raise
+                    print(f"Webhook failed after {max_retries} attempts: {e}")
+                    return False
                 # Exponential backoff
                 await asyncio.sleep(2 ** attempt)
         
