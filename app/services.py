@@ -56,36 +56,46 @@ class ImageryService:
             print(f"[check_availability] Executing command:")
             print(f"  {' '.join(cmd)}")
             
+            # CRITICAL FIX: Capture as bytes, not text
             result = subprocess.run(
                 cmd,
                 capture_output=True,
-                text=True,
                 timeout=60
             )
             
             print(f"[check_availability] Command completed")
             print(f"  Return code: {result.returncode}")
-            print(f"  STDOUT length: {len(result.stdout)} chars")
-            print(f"  STDERR length: {len(result.stderr)} chars")
-            
-            if result.stdout:
-                print(f"[check_availability] STDOUT:")
-                print(f"{result.stdout}")
-            
-            if result.stderr:
-                print(f"[check_availability] STDERR:")
-                print(f"{result.stderr}")
             
             if result.returncode != 0:
+                # Decode stderr for error messages
+                try:
+                    stderr_text = result.stderr.decode('utf-16-le', errors='ignore').replace('\x00', '')
+                except:
+                    stderr_text = result.stderr.decode('utf-8', errors='ignore')
+                
                 error_msg = f"Command failed with return code {result.returncode}"
-                if result.stderr:
-                    error_msg += f"\nError: {result.stderr}"
+                if stderr_text:
+                    error_msg += f"\nError: {stderr_text}"
                 print(f"[check_availability] ERROR: {error_msg}")
                 raise Exception(error_msg)
             
+            # Decode output - try UTF-16LE first, fallback to UTF-8
+            try:
+                stdout_text = result.stdout.decode('utf-16-le', errors='ignore')
+                # Remove null bytes that are artifacts of UTF-16 encoding
+                stdout_text = stdout_text.replace('\x00', '')
+                print(f"[check_availability] Decoded as UTF-16LE")
+            except:
+                stdout_text = result.stdout.decode('utf-8', errors='ignore')
+                print(f"[check_availability] Decoded as UTF-8")
+            
+            print(f"[check_availability] STDOUT length: {len(stdout_text)} chars")
+            print(f"[check_availability] STDOUT:")
+            print(f"{stdout_text[:500]}...")  # Print first 500 chars
+            
             # Parse output to get available dates
             print(f"[check_availability] Parsing output for dates...")
-            dates = self._parse_availability_output(result.stdout)
+            dates = self._parse_availability_output(stdout_text)
             print(f"[check_availability] Found {len(dates)} dates: {dates}")
             print(f"{'='*60}\n")
             
@@ -450,92 +460,35 @@ class ImageryService:
             print(f"{'='*60}\n")
     
     def _parse_availability_output(self, output: str) -> List[str]:
-        """Parse GEHistoricalImagery availability output with enhanced debugging"""
+        """Parse GEHistoricalImagery availability output - simplified after UTF-16 fix"""
         print(f"[_parse_availability_output] Parsing output...")
         print(f"  Output length: {len(output)} chars")
         
         dates = []
         
         try:
-            # Print raw output for debugging
-            print(f"[_parse_availability_output] Raw output:")
+            # Print first 500 chars for debugging
+            print(f"[_parse_availability_output] First 500 chars of output:")
             print(f"--- START OUTPUT ---")
-            print(output)
+            print(output[:500])
             print(f"--- END OUTPUT ---")
             
             # Split output into lines
             lines = output.strip().split('\n')
             print(f"[_parse_availability_output] Number of lines: {len(lines)}")
             
-            # NEW: Debug first few lines with character codes
-            print(f"\n[DEBUG] First 5 lines with repr() and hex:")
-            for i, line in enumerate(lines[:5]):
-                print(f"  Line {i}: {repr(line)}")
-                print(f"    Length: {len(line)}")
-                # Show hex of first 50 chars or full line if shorter
-                sample = line[:50] if len(line) > 50 else line
-                print(f"    Hex (first 50 chars): {sample.encode('utf-8').hex()}")
-            
-            # Look for dates - try multiple patterns
+            # Look for dates in YYYY/MM/DD format - should work now!
             import re
-            
-            # Original pattern - forward slash
-            pattern1 = r'\d{4}/\d{2}/\d{2}'
-            
-            # Pattern 2 - any single character separator
-            pattern2 = r'\d{4}.\d{2}.\d{2}'
-            
-            # Pattern 3 - any separator (one or more non-digits)
-            pattern3 = r'\d{4}\D+\d{2}\D+\d{2}'
-            
-            # Pattern 4 - specifically looking for hyphen (common alternative)
-            pattern4 = r'\d{4}-\d{2}-\d{2}'
-            
-            print(f"\n[DEBUG] Trying multiple regex patterns...")
+            date_pattern = r'\d{4}/\d{2}/\d{2}'
             
             for idx, line in enumerate(lines):
-                # Try all patterns
-                matches1 = re.findall(pattern1, line)
-                matches2 = re.findall(pattern2, line)
-                matches3 = re.findall(pattern3, line)
-                matches4 = re.findall(pattern4, line)
-                
-                # Log which patterns found matches
-                if matches1:
-                    print(f"  Line {idx} [Pattern1 /]: {matches1}")
-                if matches2:
-                    print(f"  Line {idx} [Pattern2 any]: {matches2}")
-                if matches3:
-                    print(f"  Line {idx} [Pattern3 \\D+]: {matches3}")
-                if matches4:
-                    print(f"  Line {idx} [Pattern4 -]: {matches4}")
-                
-                # Use the most permissive pattern (pattern2) that found matches
-                if matches2:
-                    for match in matches2:
-                        # Clean up: replace any separator with hyphen
-                        # Extract digits and positions
-                        cleaned = ''
-                        digit_groups = []
-                        current_group = ''
-                        
-                        for char in match:
-                            if char.isdigit():
-                                current_group += char
-                            else:
-                                if current_group:
-                                    digit_groups.append(current_group)
-                                    current_group = ''
-                        if current_group:
-                            digit_groups.append(current_group)
-                        
-                        # Should have exactly 3 groups: YYYY, MM, DD
-                        if len(digit_groups) == 3:
-                            year, month, day = digit_groups
-                            if len(year) == 4 and len(month) == 2 and len(day) == 2:
-                                date_normalized = f"{year}-{month}-{day}"
-                                dates.append(date_normalized)
-                                print(f"    Extracted and normalized: {date_normalized}")
+                matches = re.findall(date_pattern, line)
+                if matches:
+                    print(f"  Line {idx}: Found {len(matches)} dates: {matches}")
+                    # Convert YYYY/MM/DD to YYYY-MM-DD
+                    for match in matches:
+                        date_normalized = match.replace('/', '-')
+                        dates.append(date_normalized)
             
             # Remove duplicates and sort
             dates = sorted(list(set(dates)))
@@ -543,9 +496,6 @@ class ImageryService:
             
             if not dates:
                 print(f"[_parse_availability_output] ERROR: No dates found in output")
-                print(f"\n[DEBUG] Showing ALL lines for manual inspection:")
-                for i, line in enumerate(lines):
-                    print(f"  [{i:3d}] {repr(line)}")
                 raise Exception("No imagery dates found for this location")
             
             print(f"[_parse_availability_output] Final result: {dates}")
