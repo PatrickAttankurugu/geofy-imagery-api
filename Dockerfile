@@ -1,24 +1,5 @@
 # ============================
-# Stage 1: Build GEHistoricalImagery from v0.2.0.1 tag
-# ============================
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS gehi-build
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
- && rm -rf /var/lib/apt/lists/*
-
-# Clone and checkout the v0.2.0.1 release tag (last known working version)
-RUN git clone https://github.com/Mbucari/GEHistoricalImagery.git /src && \
-    cd /src && \
-    git checkout v0.2.0.1
-
-RUN dotnet publish /src/src/GEHistoricalImagery/GEHistoricalImagery.csproj \
-      -c Release -r linux-x64 --self-contained true \
-      -p:PublishSingleFile=true \
-      -o /out
-
-# ============================
-# Stage 2: Python API runtime
+# Python API with GEHistoricalImagery via gehinix.sh
 # ============================
 FROM python:3.11-slim
 
@@ -27,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Set working directory
 WORKDIR /app
 
-# System deps (GDAL + build tools for wheels)
+# System deps (GDAL + build tools + .NET SDK)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
@@ -37,12 +18,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgdal-dev \
     gdal-bin \
     ca-certificates \
+    git \
  && rm -rf /var/lib/apt/lists/*
 
-# Install GEHistoricalImagery from build stage
-COPY --from=gehi-build /out/GEHistoricalImagery /usr/local/bin/GEHistoricalImagery
-RUN chmod +x /usr/local/bin/GEHistoricalImagery \
- && /usr/local/bin/GEHistoricalImagery --version || true
+# Download and setup gehinix.sh (official build script)
+RUN wget https://raw.githubusercontent.com/Mbucari/GEHistoricalImagery/refs/heads/master/gehinix.sh \
+ && chmod +x gehinix.sh \
+ && ./gehinix.sh --help || echo "gehinix.sh downloaded"
+
+# Create wrapper script for GEHistoricalImagery
+RUN echo '#!/bin/bash\n/app/gehinix.sh "$@"' > /usr/local/bin/GEHistoricalImagery \
+ && chmod +x /usr/local/bin/GEHistoricalImagery
 
 # Copy requirements first (better layer caching)
 COPY requirements.txt .
