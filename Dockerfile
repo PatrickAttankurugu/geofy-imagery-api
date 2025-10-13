@@ -1,11 +1,31 @@
-# Use Python 3.11 slim image for smaller size
+# ============================
+# Stage 1: Build GEHistoricalImagery (self-contained linux-x64)
+# ============================
+FROM mcr.microsoft.com/dotnet/sdk:8.0-jammy AS gehi-build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+ && rm -rf /var/lib/apt/lists/*
+
+# Clone and publish a single-file, self-contained binary
+RUN git clone https://github.com/Mbucari/GEHistoricalImagery.git /src
+RUN dotnet publish /src/src/GEHistoricalImagery/GEHistoricalImagery.csproj \
+      -c Release -r linux-x64 --self-contained true \
+      -p:PublishSingleFile=true \
+      -o /out
+
+# ============================
+# Stage 2: Python API runtime
+# ============================
 FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies for Python packages
-RUN apt-get update && apt-get install -y \
+# System deps (GDAL + build tools for wheels)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     wget \
@@ -13,47 +33,33 @@ RUN apt-get update && apt-get install -y \
     curl \
     libgdal-dev \
     gdal-bin \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
-# Install .NET Runtime for GEHistoricalImagery
-RUN wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh \
-    && chmod +x dotnet-install.sh \
-    && ./dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet \
-    && rm dotnet-install.sh
+# Install GEHistoricalImagery from build stage
+COPY --from=gehi-build /out/GEHistoricalImagery /usr/local/bin/GEHistoricalImagery
+RUN chmod +x /usr/local/bin/GEHistoricalImagery \
+ && /usr/local/bin/GEHistoricalImagery --version || true
 
-# Add .NET to PATH
-ENV DOTNET_ROOT=/usr/share/dotnet
-ENV PATH=$PATH:/usr/share/dotnet
-
-# Download and install GEHistoricalImagery
-RUN wget https://github.com/Mbucari/GEHistoricalImagery/releases/latest/download/GEHistoricalImagery-linux-x64.zip \
-    && unzip GEHistoricalImagery-linux-x64.zip -d /usr/local/bin/ \
-    && chmod +x /usr/local/bin/GEHistoricalImagery \
-    && rm GEHistoricalImagery-linux-x64.zip
-
-# Verify GEHistoricalImagery installation
-RUN /usr/local/bin/GEHistoricalImagery --version || echo "GEHistoricalImagery installed"
-
-# Copy requirements first (for Docker layer caching)
+# Copy requirements first (better layer caching)
 COPY requirements.txt .
 
-# Install Python dependencies
+# Install Python deps
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+ && pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
-# Create necessary directories
+# Create runtime directories
 RUN mkdir -p storage/temp storage/logs storage/cache
 
-# Expose port
+# Expose API port
 EXPOSE 8006
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8006/api/health || exit 1
+  CMD curl -f http://localhost:8006/api/health || exit 1
 
 # Run the application
 CMD ["python", "run.py"]
