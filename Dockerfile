@@ -1,7 +1,7 @@
 # ============================
 # Stage 1: Build GEHistoricalImagery (self-contained linux-x64)
 # ============================
-FROM mcr.microsoft.com/dotnet/sdk:8.0-jammy AS gehi-build
+FROM mcr.microsoft.com/dotnet/sdk:9.0-jammy AS gehi-build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
