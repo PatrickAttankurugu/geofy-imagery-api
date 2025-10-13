@@ -334,8 +334,8 @@ class ImageryService:
         print(f"  Number of images: {len(image_paths)}")
         
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            print(f"[analyze_with_gemini] Model initialized: gemini-1.5-flash")
+            model = genai.GenerativeModel('gemini-2.5-flash')
+            print(f"[analyze_with_gemini] Model initialized: gemini-2.5-flash")
             
             # Prepare images
             images = []
