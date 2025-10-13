@@ -7,7 +7,8 @@ pydantic-settings==2.1.0
 # Database (SQLite for MVP, upgrade to PostgreSQL later)
 sqlalchemy==2.0.23
 
-# Geospatial
+# Geospatial (NumPy pinned to 1.x for rasterio 1.3.9 compatibility)
+numpy<2.0.0
 rasterio==1.3.9
 Pillow==10.1.0
 
