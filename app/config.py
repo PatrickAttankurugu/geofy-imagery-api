@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./geofy_imagery.db"
     
     # GEHistoricalImagery
-    GEHISTORICALIMAGERY_PATH: str
+    GEHISTORICALIMAGERY_PATH: str = "/app/gehinix.sh"
     
     # Cloudinary
     CLOUDINARY_CLOUD_NAME: str
@@ -26,5 +26,6 @@ class Settings(BaseSettings):
     
     class Config:
         env_file = ".env"
+        extra = "ignore"  # This allows extra fields in .env without errors
 
 settings = Settings()
