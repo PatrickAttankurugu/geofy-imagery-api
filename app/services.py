@@ -450,7 +450,7 @@ class ImageryService:
             print(f"{'='*60}\n")
     
     def _parse_availability_output(self, output: str) -> List[str]:
-        """Parse GEHistoricalImagery availability output"""
+        """Parse GEHistoricalImagery availability output with enhanced debugging"""
         print(f"[_parse_availability_output] Parsing output...")
         print(f"  Output length: {len(output)} chars")
         
@@ -467,18 +467,75 @@ class ImageryService:
             lines = output.strip().split('\n')
             print(f"[_parse_availability_output] Number of lines: {len(lines)}")
             
-            # Look for dates in YYYY/MM/DD format (the actual format from GEHistoricalImagery)
+            # NEW: Debug first few lines with character codes
+            print(f"\n[DEBUG] First 5 lines with repr() and hex:")
+            for i, line in enumerate(lines[:5]):
+                print(f"  Line {i}: {repr(line)}")
+                print(f"    Length: {len(line)}")
+                # Show hex of first 50 chars or full line if shorter
+                sample = line[:50] if len(line) > 50 else line
+                print(f"    Hex (first 50 chars): {sample.encode('utf-8').hex()}")
+            
+            # Look for dates - try multiple patterns
             import re
-            date_pattern = r'\d{4}/\d{2}/\d{2}'
+            
+            # Original pattern - forward slash
+            pattern1 = r'\d{4}/\d{2}/\d{2}'
+            
+            # Pattern 2 - any single character separator
+            pattern2 = r'\d{4}.\d{2}.\d{2}'
+            
+            # Pattern 3 - any separator (one or more non-digits)
+            pattern3 = r'\d{4}\D+\d{2}\D+\d{2}'
+            
+            # Pattern 4 - specifically looking for hyphen (common alternative)
+            pattern4 = r'\d{4}-\d{2}-\d{2}'
+            
+            print(f"\n[DEBUG] Trying multiple regex patterns...")
             
             for idx, line in enumerate(lines):
-                matches = re.findall(date_pattern, line)
-                if matches:
-                    print(f"  Line {idx}: Found {len(matches)} dates: {matches}")
-                    # Convert YYYY/MM/DD to YYYY-MM-DD
-                    for match in matches:
-                        date_normalized = match.replace('/', '-')
-                        dates.append(date_normalized)
+                # Try all patterns
+                matches1 = re.findall(pattern1, line)
+                matches2 = re.findall(pattern2, line)
+                matches3 = re.findall(pattern3, line)
+                matches4 = re.findall(pattern4, line)
+                
+                # Log which patterns found matches
+                if matches1:
+                    print(f"  Line {idx} [Pattern1 /]: {matches1}")
+                if matches2:
+                    print(f"  Line {idx} [Pattern2 any]: {matches2}")
+                if matches3:
+                    print(f"  Line {idx} [Pattern3 \\D+]: {matches3}")
+                if matches4:
+                    print(f"  Line {idx} [Pattern4 -]: {matches4}")
+                
+                # Use the most permissive pattern (pattern2) that found matches
+                if matches2:
+                    for match in matches2:
+                        # Clean up: replace any separator with hyphen
+                        # Extract digits and positions
+                        cleaned = ''
+                        digit_groups = []
+                        current_group = ''
+                        
+                        for char in match:
+                            if char.isdigit():
+                                current_group += char
+                            else:
+                                if current_group:
+                                    digit_groups.append(current_group)
+                                    current_group = ''
+                        if current_group:
+                            digit_groups.append(current_group)
+                        
+                        # Should have exactly 3 groups: YYYY, MM, DD
+                        if len(digit_groups) == 3:
+                            year, month, day = digit_groups
+                            if len(year) == 4 and len(month) == 2 and len(day) == 2:
+                                date_normalized = f"{year}-{month}-{day}"
+                                dates.append(date_normalized)
+                                print(f"    Extracted and normalized: {date_normalized}")
             
             # Remove duplicates and sort
             dates = sorted(list(set(dates)))
@@ -486,6 +543,9 @@ class ImageryService:
             
             if not dates:
                 print(f"[_parse_availability_output] ERROR: No dates found in output")
+                print(f"\n[DEBUG] Showing ALL lines for manual inspection:")
+                for i, line in enumerate(lines):
+                    print(f"  [{i:3d}] {repr(line)}")
                 raise Exception("No imagery dates found for this location")
             
             print(f"[_parse_availability_output] Final result: {dates}")
@@ -494,6 +554,7 @@ class ImageryService:
         except Exception as e:
             print(f"[_parse_availability_output] EXCEPTION: {type(e).__name__}: {str(e)}")
             raise Exception(f"Failed to parse availability dates: {str(e)}")
+
 
 class WebhookService:
     """Handle webhook callbacks"""
