@@ -19,7 +19,6 @@ services:
     # Volume mounts for persistence
     volumes:
       - ./storage:/app/storage
-      - ./geofy_imagery.db:/app/geofy_imagery.db
       - ./logs:/app/logs
     
     # Resource limits for t3.xlarge (4 vCPU, 16GB RAM)
