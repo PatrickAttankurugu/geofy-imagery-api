@@ -24,7 +24,8 @@ class ImageryService:
     """All imagery processing logic"""
     
     def __init__(self):
-        self.temp_dir = Path(settings.TEMP_STORAGE_PATH)
+        # CRITICAL: Use absolute path so CLI tool can find the directory
+        self.temp_dir = Path(settings.TEMP_STORAGE_PATH).resolve()
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         print(f"[ImageryService] Initialized with temp_dir: {self.temp_dir}")
         
@@ -56,7 +57,7 @@ class ImageryService:
             print(f"[check_availability] Executing command:")
             print(f"  {' '.join(cmd)}")
             
-            # CRITICAL FIX: Capture as bytes, not text
+            # Capture as bytes to handle UTF-16 encoding
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -91,7 +92,7 @@ class ImageryService:
             
             print(f"[check_availability] STDOUT length: {len(stdout_text)} chars")
             print(f"[check_availability] STDOUT:")
-            print(f"{stdout_text[:500]}...")  # Print first 500 chars
+            print(f"{stdout_text[:500]}...")
             
             # Parse output to get available dates
             print(f"[check_availability] Parsing output for dates...")
@@ -126,9 +127,9 @@ class ImageryService:
         print(f"  Coordinates: lat={lat}, lon={lon}")
         print(f"  Zoom: {zoom}")
         
-        # Use consistent naming: job_id_YYYY-MM-DD.tif
+        # Use absolute path for output
         output_path = self.temp_dir / f"{job_id}_{date}.tif"
-        print(f"  Output path: {output_path}")
+        print(f"  Output path (absolute): {output_path}")
         
         try:
             # Create a small bounding box around the point
@@ -147,7 +148,7 @@ class ImageryService:
                 '--upper-right', upper_right,
                 '--date', date,
                 '--zoom', str(zoom),
-                '--output', str(output_path),
+                '--output', str(output_path),  # Already absolute from __init__
                 '--provider', 'TM'
             ]
             
@@ -460,7 +461,7 @@ class ImageryService:
             print(f"{'='*60}\n")
     
     def _parse_availability_output(self, output: str) -> List[str]:
-        """Parse GEHistoricalImagery availability output - simplified after UTF-16 fix"""
+        """Parse GEHistoricalImagery availability output"""
         print(f"[_parse_availability_output] Parsing output...")
         print(f"  Output length: {len(output)} chars")
         
@@ -477,7 +478,7 @@ class ImageryService:
             lines = output.strip().split('\n')
             print(f"[_parse_availability_output] Number of lines: {len(lines)}")
             
-            # Look for dates in YYYY/MM/DD format - should work now!
+            # Look for dates in YYYY/MM/DD format
             import re
             date_pattern = r'\d{4}/\d{2}/\d{2}'
             
