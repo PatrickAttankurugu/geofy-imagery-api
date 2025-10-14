@@ -44,7 +44,7 @@ class CaptureResponse(BaseModel):
     jobId: str
     status: str
     message: str
-    estimatedTime: Optional[str] = "5-15 minutes"
+    estimatedTime: Optional[str] = "2 minutes"
 
 class ImageryItem(BaseModel):
     year: int

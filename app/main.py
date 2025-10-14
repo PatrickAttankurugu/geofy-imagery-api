@@ -195,7 +195,7 @@ async def capture_imagery(
         "jobId": job.id,
         "status": "queued",
         "message": "Imagery capture job started",
-        "estimatedTime": "5-15 minutes"
+        "estimatedTime": "2 minutes"
     }
 
 @app.get("/api/status/{job_id}", response_model=JobStatusResponse)
