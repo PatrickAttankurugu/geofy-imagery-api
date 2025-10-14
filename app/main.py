@@ -112,8 +112,32 @@ async def process_imagery_job(job_id: str, coordinates: str, zoom: int, callback
         image_paths = [str(imagery_service.temp_dir / f"{job_id}_{d}.png") for d in dates_to_download]
         ai_analysis = imagery_service.analyze_with_gemini(image_paths, years=years_for_download)
         
+        # Build per-year summary 2018-2025
+        summary_years = list(range(2018, 2026))
+        # Map images by year for quick lookup
+        image_by_year = {item['year']: item for item in results}
+        # Map AI timeline by year (observation text)
+        ai_timeline = {}
+        try:
+            for entry in ai_analysis.get('timeline', []) if isinstance(ai_analysis, dict) else []:
+                if isinstance(entry, dict) and 'year' in entry and 'observation' in entry:
+                    ai_timeline.setdefault(entry['year'], entry['observation'])
+        except Exception:
+            ai_timeline = {}
+        years_summary = []
+        for y in summary_years:
+            img = image_by_year.get(y)
+            years_summary.append({
+                'year': y,
+                'captureDate': img['captureDate'] if img else None,
+                'imageUrl': img['imageUrl'] if img else None,
+                'optimizedUrl': img['optimizedUrl'] if img else None,
+                'thumbnailUrl': img['thumbnailUrl'] if img else None,
+                'aiObservation': ai_timeline.get(y)
+            })
+
         # Save results
-        job.imagery_data = {'images': results}
+        job.imagery_data = {'images': results, 'years': years_summary}
         job.ai_analysis = ai_analysis
         job.status = JobStatus.COMPLETED
         job.progress = 100
@@ -248,6 +272,7 @@ def get_imagery(job_id: str, db: Session = Depends(get_db)):
         "location": job.location_name,
         "coordinates": job.coordinates,
         "images": job.imagery_data.get('images', []) if job.imagery_data else [],
+        "years": job.imagery_data.get('years', []) if job.imagery_data else [],
         "aiAnalysis": job.ai_analysis,
         "processingTime": processing_time
     }

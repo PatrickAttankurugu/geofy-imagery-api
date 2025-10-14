@@ -53,6 +53,14 @@ class ImageryItem(BaseModel):
     optimizedUrl: str
     thumbnailUrl: str
 
+class YearlyImagery(BaseModel):
+    year: int
+    captureDate: Optional[str] = None
+    imageUrl: Optional[str] = None
+    optimizedUrl: Optional[str] = None
+    thumbnailUrl: Optional[str] = None
+    aiObservation: Optional[str] = None
+
 class JobStatusResponse(BaseModel):
     success: bool
     jobId: str
@@ -70,6 +78,7 @@ class ImageryResponse(BaseModel):
     images: List[ImageryItem]
     aiAnalysis: Optional[Dict[str, Any]] = None
     processingTime: Optional[str] = None
+    years: Optional[List[YearlyImagery]] = None
 
 class HealthResponse(BaseModel):
     status: str

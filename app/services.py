@@ -372,18 +372,23 @@ class ImageryService:
             constrained_years = years or []
             constrained_years_str = ", ".join(str(y) for y in sorted(constrained_years)) if constrained_years else "2018-2025"
             prompt = f"""
-            Analyze ONLY the provided images in chronological order. Do not infer or include years not present.
-            Years to consider strictly: {constrained_years_str}
-            Identify:
-            1. Major structural changes (buildings, roads, land use)
-            2. Timeline entries ONLY for the provided years (omit any other years)
-            3. Notable patterns or trends
-            
-            Respond ONLY with valid JSON in this exact format (no markdown, no code blocks):
+            Analyze ONLY the provided images in strict chronological order. Do not infer or include years not present.
+            Strict years to consider: {constrained_years_str}
+            Your primary goal: detect structural development across years (e.g., NEW buildings constructed, significant expansions, paved vs unpaved roads), with emphasis on identifying new buildings per year.
+
+            Return ONLY valid JSON (no markdown/code fences) with this shape:
             {{
-                "changes_detected": ["change 1", "change 2"],
-                "timeline": [{{"year": 2018, "observation": "description"}}],
-                "summary": "overall assessment"
+              "changes_detected": ["high-level list of notable changes across the whole period"],
+              "timeline": [{{"year": 2018, "observation": "concise observation for that year (only for allowed years)"}}],
+              "per_year_changes": [
+                {{
+                  "year": 2018,
+                  "newBuildingsLikely": true,
+                  "notes": ["short bullet point of the most important structural changes detected that year"]
+                }}
+              ],
+              "new_buildings_years": [2019, 2021],
+              "summary": "short overall assessment focusing on structural development"
             }}
             """
             
@@ -470,11 +475,13 @@ class ImageryService:
                     "summary": analysis.get("summary", "Incomplete analysis")
                 }
             
-            # If years constraint provided, filter timeline to only allowed years
+            # If years constraint provided, filter timeline and per_year_changes to only allowed years
             if years:
                 allowed = set(years)
                 timeline = analysis.get("timeline", [])
                 analysis["timeline"] = [entry for entry in timeline if isinstance(entry, dict) and entry.get("year") in allowed]
+                per_year = analysis.get("per_year_changes", [])
+                analysis["per_year_changes"] = [entry for entry in per_year if isinstance(entry, dict) and entry.get("year") in allowed]
             
             print(f"[analyze_with_gemini] Analysis complete:")
             print(f"  Changes detected: {len(analysis['changes_detected'])}")
