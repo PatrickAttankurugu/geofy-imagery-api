@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     # API
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8006
-    DEBUG: bool = True
+    DEBUG: bool = False
     
     # Database
     DATABASE_URL: str = "sqlite:///./geofy_imagery.db"

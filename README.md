@@ -69,6 +69,8 @@ Receiver validation checklist:
 - Base backoff seconds: `WEBHOOK_BACKOFF_BASE_SECONDS` (default 2), delay = base * 2^attempt
 - Timeout per attempt: `WEBHOOK_REQUEST_TIMEOUT_SECONDS` (default 30)
 - We retry on network errors, `5xx`, and `429`; `4xx` are not retried
+- If `Retry-After` header (seconds) is present, we honor it when larger than our computed backoff
+- We add full jitter to backoff (random 0..delay) to avoid thundering herd
 
 ### Configuration (.env)
 ```env

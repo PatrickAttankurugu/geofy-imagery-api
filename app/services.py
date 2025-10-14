@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional
 import hmac
 import hashlib
 import uuid
+import random
 from datetime import datetime
 import cloudinary
 import cloudinary.uploader
@@ -19,7 +20,8 @@ from .config import settings
 cloudinary.config(
     cloud_name=settings.CLOUDINARY_CLOUD_NAME,
     api_key=settings.CLOUDINARY_API_KEY,
-    api_secret=settings.CLOUDINARY_API_SECRET
+    api_secret=settings.CLOUDINARY_API_SECRET,
+    secure=True
 )
 genai.configure(api_key=settings.GEMINI_API_KEY)
 
@@ -308,12 +310,14 @@ class ImageryService:
                 'original': upload_result['secure_url'],
                 'optimized': cloudinary.CloudinaryImage(upload_result['public_id']).build_url(
                     quality="auto",
-                    fetch_format="auto"
+                    fetch_format="auto",
+                    secure=True
                 ),
                 'thumbnail': cloudinary.CloudinaryImage(upload_result['public_id']).build_url(
                     width=400,
                     height=300,
-                    crop="fill"
+                    crop="fill",
+                    secure=True
                 )
             }
             
@@ -616,10 +620,26 @@ class WebhookService:
                 print(f"[send_webhook] FAILED after {max_retries} attempts")
                 print(f"{'='*60}\n")
                 return False
-            # Exponential backoff with base from settings (base * 2^attempt)
+            # Compute backoff with optional Retry-After support and jitter
+            retry_after_header = None
+            try:
+                retry_after_header = response.headers.get('Retry-After') if 'response' in locals() else None
+            except Exception:
+                retry_after_header = None
             wait_time = max(1, settings.WEBHOOK_BACKOFF_BASE_SECONDS) * (2 ** attempt)
-            print(f"  Waiting {wait_time}s before retry...")
-            await asyncio.sleep(wait_time)
+            if retry_after_header:
+                try:
+                    # Retry-After can be seconds or an HTTP-date; handle seconds form
+                    ra_seconds = int(retry_after_header)
+                    wait_time = max(wait_time, ra_seconds)
+                    print(f"  Honoring Retry-After: {ra_seconds}s")
+                except ValueError:
+                    # If not integer, keep exponential backoff (parsing HTTP-date omitted for simplicity)
+                    print(f"  Retry-After not numeric; using exponential backoff")
+            # Full jitter: randomize between 0 and wait_time
+            jittered_wait = random.uniform(0, wait_time)
+            print(f"  Waiting {jittered_wait:.2f}s before retry...")
+            await asyncio.sleep(jittered_wait)
         
         print(f"[send_webhook] FAILED")
         print(f"{'='*60}\n")
