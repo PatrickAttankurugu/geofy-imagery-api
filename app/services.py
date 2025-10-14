@@ -382,11 +382,43 @@ class ImageryService:
             
             # Generate analysis
             print(f"[analyze_with_gemini] Sending request to Gemini API...")
-            response = model.generate_content([prompt] + images,request_options={'timeout': 300})
+            try:
+                # Some versions of google-generativeai do not support request_options.
+                # Use basic call; rely on client/library timeouts.
+                response = model.generate_content([prompt] + images)
+            except TypeError as te:
+                # Capture detailed error context for debugging
+                import traceback
+                tb = traceback.format_exc()
+                print(f"[analyze_with_gemini] TYPE ERROR: {str(te)}")
+                print(f"[analyze_with_gemini] TRACEBACK:\n{tb}")
+                hint = "Remove unsupported parameters like request_options; upgrade/downgrade google-generativeai to a compatible version."
+                return {
+                    "error": "AI analysis failed during request construction",
+                    "exceptionType": type(te).__name__,
+                    "message": str(te),
+                    "hint": hint,
+                    "changes_detected": [],
+                    "timeline": [],
+                    "summary": "Analysis unavailable due to request construction error"
+                }
+            except Exception as e:
+                import traceback
+                tb = traceback.format_exc()
+                print(f"[analyze_with_gemini] REQUEST ERROR: {type(e).__name__}: {str(e)}")
+                print(f"[analyze_with_gemini] TRACEBACK:\n{tb}")
+                return {
+                    "error": "AI analysis failed during request",
+                    "exceptionType": type(e).__name__,
+                    "message": str(e),
+                    "changes_detected": [],
+                    "timeline": [],
+                    "summary": "Analysis unavailable due to request error"
+                }
             print(f"[analyze_with_gemini] Response received")
             
             # Parse response - handle potential markdown wrapping
-            response_text = response.text.strip()
+            response_text = (response.text or "").strip()
             print(f"[analyze_with_gemini] Response length: {len(response_text)} chars")
             print(f"[analyze_with_gemini] First 200 chars: {response_text[:200]}")
             
@@ -403,10 +435,15 @@ class ImageryService:
                 analysis = json.loads(response_text)
                 print(f"[analyze_with_gemini] JSON parsed successfully")
             except json.JSONDecodeError as je:
+                import traceback
+                tb = traceback.format_exc()
                 print(f"[analyze_with_gemini] JSON parsing failed: {str(je)}")
+                print(f"[analyze_with_gemini] TRACEBACK:\n{tb}")
                 print(f"[analyze_with_gemini] Raw response: {response_text[:500]}")
                 return {
                     "error": "AI response was not valid JSON",
+                    "exceptionType": type(je).__name__,
+                    "message": str(je),
                     "raw_response": response_text[:500],
                     "changes_detected": ["Unable to parse AI response"],
                     "timeline": [],
@@ -435,10 +472,15 @@ class ImageryService:
             return analysis
             
         except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
             print(f"[analyze_with_gemini] EXCEPTION: {type(e).__name__}: {str(e)}")
+            print(tb)
             print(f"{'='*60}\n")
             return {
                 "error": f"AI analysis failed: {str(e)}",
+                "exceptionType": type(e).__name__,
+                "message": str(e),
                 "changes_detected": [],
                 "timeline": [],
                 "summary": "Analysis unavailable due to error"
