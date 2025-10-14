@@ -149,11 +149,21 @@ async def process_imagery_job(job_id: str, coordinates: str, zoom: int, callback
         
         # Send webhook if provided
         if callback_url:
+            # Calculate processing time
+            processing_time = None
+            if job.completed_at:
+                delta = job.completed_at - job.created_at
+                processing_time = f"{delta.seconds // 60}m {delta.seconds % 60}s"
+            
             webhook_payload = {
+                'success': True,
                 'jobId': job_id,
-                'status': 'completed',
+                'location': job.location_name,
+                'coordinates': job.coordinates,
                 'images': results,
+                'years': years_summary,
                 'aiAnalysis': ai_analysis,
+                'processingTime': processing_time,
                 'deliveredAt': datetime.utcnow().isoformat() + 'Z'
             }
             try:
