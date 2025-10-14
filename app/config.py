@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     # Storage
     TEMP_STORAGE_PATH: str = "./storage/temp"
     
+    # Webhooks
+    WEBHOOK_SIGNING_SECRET: Optional[str] = None  # If set, payloads are HMAC signed
+    WEBHOOK_REQUEST_TIMEOUT_SECONDS: int = 30
+    WEBHOOK_MAX_RETRIES: int = 5
+    WEBHOOK_BACKOFF_BASE_SECONDS: int = 2
+    WEBHOOK_TOLERANCE_SECONDS: int = 300  # receiver-side recommended timestamp tolerance
+    WEBHOOK_USER_AGENT: str = "Geofy-Imagery-API/1.0 (+https://geofy.example)"
+    
     class Config:
         env_file = ".env"
         extra = "ignore"  # This allows extra fields in .env without errors

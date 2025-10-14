@@ -22,6 +22,21 @@ class CaptureRequest(BaseModel):
             return v
         except Exception as e:
             raise ValueError(f"Invalid coordinates: {e}")
+    
+    @validator('callbackUrl')
+    def validate_callback_url(cls, v):
+        if v is None or v == "":
+            return v
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(v)
+            if parsed.scheme not in ("https",):
+                raise ValueError("callbackUrl must use https")
+            if not parsed.netloc:
+                raise ValueError("callbackUrl must include host")
+            return v
+        except Exception as e:
+            raise ValueError(f"Invalid callbackUrl: {e}")
 
 # Response Schemas
 class CaptureResponse(BaseModel):

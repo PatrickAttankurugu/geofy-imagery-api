@@ -4,6 +4,9 @@ import json
 import asyncio
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+import hmac
+import hashlib
+import uuid
 from datetime import datetime
 import cloudinary
 import cloudinary.uploader
@@ -510,38 +513,71 @@ class WebhookService:
     """Handle webhook callbacks"""
     
     @staticmethod
-    async def send_webhook(url: str, payload: Dict[str, Any]):
-        """Send webhook with retry logic"""
+    async def send_webhook(url: str, payload: Dict[str, Any], event: Optional[str] = None) -> bool:
+        """Send webhook with retry logic and optional HMAC signature.
+        Adds standard headers and exponential backoff. Returns True on 2xx.
+        """
         import httpx
+        from .config import settings
         
         print(f"\n{'='*60}")
         print(f"[send_webhook] Sending webhook to: {url}")
         print(f"  Payload keys: {list(payload.keys())}")
+        if event:
+            print(f"  Event: {event}")
         
-        max_retries = 3
+        # Prepare headers
+        delivery_id = str(uuid.uuid4())
+        headers = {
+            'Content-Type': 'application/json',
+            'User-Agent': settings.WEBHOOK_USER_AGENT,
+            'Geofy-Event': event or 'job.update',
+            'Geofy-Delivery-Id': delivery_id
+        }
+        
+        # Attach timestamp and compute signature if secret provided
+        timestamp = str(int(datetime.utcnow().timestamp()))
+        signature_header = None
+        if settings.WEBHOOK_SIGNING_SECRET:
+            payload_bytes = json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+            base_string = f"t={timestamp}.body=".encode('utf-8') + payload_bytes
+            mac = hmac.new(settings.WEBHOOK_SIGNING_SECRET.encode('utf-8'), base_string, hashlib.sha256)
+            signature = mac.hexdigest()
+            signature_header = f"t={timestamp},v1={signature}"
+            headers['Geofy-Signature'] = signature_header
+            headers['Geofy-Signature-Alg'] = 'HMAC-SHA256'
+            headers['Geofy-Signature-Version'] = '1'
+            headers['Geofy-Timestamp'] = timestamp
+        
+        max_retries = settings.WEBHOOK_MAX_RETRIES
         for attempt in range(max_retries):
             try:
                 print(f"[send_webhook] Attempt {attempt + 1}/{max_retries}")
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(url, json=payload)
+                timeout = settings.WEBHOOK_REQUEST_TIMEOUT_SECONDS
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(url, json=payload, headers=headers)
                     print(f"  Response status: {response.status_code}")
                     
-                    if response.status_code < 300:
+                    if 200 <= response.status_code < 300:
                         print(f"[send_webhook] SUCCESS")
                         print(f"{'='*60}\n")
                         return True
-                    else:
-                        print(f"  Response body: {response.text[:200]}")
+                    print(f"  Response body: {response.text[:200]}")
+                    # Retry only on network-ish conditions: 5xx and 429
+                    if not (response.status_code >= 500 or response.status_code == 429):
+                        print(f"[send_webhook] Non-retryable status {response.status_code}")
+                        return False
             except Exception as e:
                 print(f"  Exception: {type(e).__name__}: {str(e)}")
-                if attempt == max_retries - 1:
-                    print(f"[send_webhook] FAILED after {max_retries} attempts")
-                    print(f"{'='*60}\n")
-                    return False
-                # Exponential backoff
-                wait_time = 2 ** attempt
-                print(f"  Waiting {wait_time}s before retry...")
-                await asyncio.sleep(wait_time)
+            
+            if attempt == max_retries - 1:
+                print(f"[send_webhook] FAILED after {max_retries} attempts")
+                print(f"{'='*60}\n")
+                return False
+            # Exponential backoff with base from settings (base * 2^attempt)
+            wait_time = max(1, settings.WEBHOOK_BACKOFF_BASE_SECONDS) * (2 ** attempt)
+            print(f"  Waiting {wait_time}s before retry...")
+            await asyncio.sleep(wait_time)
         
         print(f"[send_webhook] FAILED")
         print(f"{'='*60}\n")

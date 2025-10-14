@@ -119,10 +119,11 @@ async def process_imagery_job(job_id: str, coordinates: str, zoom: int, callback
                 'jobId': job_id,
                 'status': 'completed',
                 'images': results,
-                'aiAnalysis': ai_analysis
+                'aiAnalysis': ai_analysis,
+                'deliveredAt': datetime.utcnow().isoformat() + 'Z'
             }
             try:
-                await webhook_service.send_webhook(callback_url, webhook_payload)
+                await webhook_service.send_webhook(callback_url, webhook_payload, event="job.completed")
             except Exception as webhook_error:
                 print(f"Webhook send failed: {webhook_error}")
         
@@ -142,8 +143,9 @@ async def process_imagery_job(job_id: str, coordinates: str, zoom: int, callback
                 await webhook_service.send_webhook(callback_url, {
                     'jobId': job_id,
                     'status': 'failed',
-                    'error': str(e)
-                })
+                    'error': str(e),
+                    'deliveredAt': datetime.utcnow().isoformat() + 'Z'
+                }, event="job.failed")
             except Exception as webhook_error:
                 print(f"Failure webhook send failed: {webhook_error}")
     
