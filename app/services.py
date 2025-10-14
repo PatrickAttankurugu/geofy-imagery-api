@@ -334,7 +334,7 @@ class ImageryService:
             print(f"{'='*60}\n")
             raise Exception(f"Failed to upload to Cloudinary: {str(e)}")
     
-    def analyze_with_gemini(self, image_paths: List[str]) -> Dict[str, Any]:
+    def analyze_with_gemini(self, image_paths: List[str], years: Optional[List[int]] = None) -> Dict[str, Any]:
         """Analyze images with Gemini AI"""
         print(f"\n{'='*60}")
         print(f"[analyze_with_gemini] Starting AI analysis")
@@ -369,19 +369,22 @@ class ImageryService:
             print(f"[analyze_with_gemini] Successfully loaded {len(images)} images")
             
             # Create prompt
-            prompt = """
-            Analyze these historical satellite images in chronological order.
+            constrained_years = years or []
+            constrained_years_str = ", ".join(str(y) for y in sorted(constrained_years)) if constrained_years else "2018-2025"
+            prompt = f"""
+            Analyze ONLY the provided images in chronological order. Do not infer or include years not present.
+            Years to consider strictly: {constrained_years_str}
             Identify:
             1. Major structural changes (buildings, roads, land use)
-            2. Timeline of development
+            2. Timeline entries ONLY for the provided years (omit any other years)
             3. Notable patterns or trends
             
             Respond ONLY with valid JSON in this exact format (no markdown, no code blocks):
-            {
+            {{
                 "changes_detected": ["change 1", "change 2"],
-                "timeline": [{"year": 2018, "observation": "description"}],
+                "timeline": [{{"year": 2018, "observation": "description"}}],
                 "summary": "overall assessment"
-            }
+            }}
             """
             
             # Generate analysis
@@ -466,6 +469,12 @@ class ImageryService:
                     "timeline": analysis.get("timeline", []),
                     "summary": analysis.get("summary", "Incomplete analysis")
                 }
+            
+            # If years constraint provided, filter timeline to only allowed years
+            if years:
+                allowed = set(years)
+                timeline = analysis.get("timeline", [])
+                analysis["timeline"] = [entry for entry in timeline if isinstance(entry, dict) and entry.get("year") in allowed]
             
             print(f"[analyze_with_gemini] Analysis complete:")
             print(f"  Changes detected: {len(analysis['changes_detected'])}")

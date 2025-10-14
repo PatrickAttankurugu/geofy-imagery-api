@@ -53,9 +53,24 @@ async def process_imagery_job(job_id: str, coordinates: str, zoom: int, callback
         db.commit()
         available_dates = imagery_service.check_availability(lat, lon)
         
-        # Filter for 2018-2025
-        target_years = range(2018, 2026)
-        dates_to_download = [d for d in available_dates if any(str(y) in d for y in target_years)]
+        # Filter for 2018-2025 and select exactly one date per year (prefer latest)
+        target_years = list(range(2018, 2026))
+        # Map year -> list of dates for that year
+        dates_by_year = {}
+        for d in available_dates:
+            try:
+                y = int(d.split('-')[0])
+            except Exception:
+                continue
+            if y in target_years:
+                dates_by_year.setdefault(y, []).append(d)
+        # Pick latest date per year to maximize recency
+        dates_to_download = []
+        years_for_download = []
+        for y in sorted(dates_by_year.keys()):
+            chosen = sorted(dates_by_year[y])[-1]
+            dates_to_download.append(chosen)
+            years_for_download.append(y)
         
         if not dates_to_download:
             raise Exception("No imagery available for 2018-2025")
@@ -93,14 +108,9 @@ async def process_imagery_job(job_id: str, coordinates: str, zoom: int, callback
         job.progress = 85
         db.commit()
         
-        # Build correct image paths - should match what convert_geotiff_to_png returns
-        # Pattern: {job_id}_{date}.png where date is like "2018-01-01"
-        image_paths = [
-            str(imagery_service.temp_dir / f"{job_id}_{d}.png")
-            for d in dates_to_download
-        ]
-        
-        ai_analysis = imagery_service.analyze_with_gemini(image_paths)
+        # Build image paths (one per chosen date/year) and analyze strictly for those years
+        image_paths = [str(imagery_service.temp_dir / f"{job_id}_{d}.png") for d in dates_to_download]
+        ai_analysis = imagery_service.analyze_with_gemini(image_paths, years=years_for_download)
         
         # Save results
         job.imagery_data = {'images': results}
