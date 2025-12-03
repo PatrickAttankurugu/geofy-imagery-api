@@ -13,10 +13,11 @@ class Settings(BaseSettings):
     # GEHistoricalImagery
     GEHISTORICALIMAGERY_PATH: str = "/app/gehinix.sh"
     
-    # Cloudinary
-    CLOUDINARY_CLOUD_NAME: str
-    CLOUDINARY_API_KEY: str
-    CLOUDINARY_API_SECRET: str
+    # AWS S3
+    AWS_ACCESS_KEY_ID: str
+    AWS_SECRET_ACCESS_KEY: str
+    AWS_S3_BUCKET_NAME: str = "empverify"
+    AWS_S3_REGION: str = "eu-north-1"
     
     # Gemini
     GEMINI_API_KEY: str
