@@ -9,19 +9,19 @@ import hashlib
 import uuid
 import random
 from datetime import datetime
-import cloudinary
-import cloudinary.uploader
+import boto3
+from botocore.exceptions import ClientError
 from PIL import Image
 import rasterio
 import google.generativeai as genai
 from .config import settings
 
 # Configure services
-cloudinary.config(
-    cloud_name=settings.CLOUDINARY_CLOUD_NAME,
-    api_key=settings.CLOUDINARY_API_KEY,
-    api_secret=settings.CLOUDINARY_API_SECRET,
-    secure=True
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+    region_name=settings.AWS_S3_REGION
 )
 genai.configure(api_key=settings.GEMINI_API_KEY)
 
@@ -275,64 +275,67 @@ class ImageryService:
             print(f"{'='*60}\n")
             raise Exception(f"Failed to convert GeoTIFF: {str(e)}")
     
-    def upload_to_cloudinary(self, image_path: str, job_id: str, year: int) -> Dict[str, str]:
-        """Upload image to Cloudinary and return URLs"""
+    def upload_to_s3(self, image_path: str, job_id: str, year: int) -> Dict[str, str]:
+        """Upload image to S3 and return URLs"""
         print(f"\n{'='*60}")
-        print(f"[upload_to_cloudinary] Starting upload")
+        print(f"[upload_to_s3] Starting upload")
         print(f"  Image: {image_path}")
         print(f"  Job ID: {job_id}")
         print(f"  Year: {year}")
-        
+
         try:
             # Check if file exists
             if not os.path.exists(image_path):
                 raise Exception(f"Image file does not exist: {image_path}")
-            
+
             file_size = os.path.getsize(image_path)
             print(f"  File size: {file_size} bytes")
-            
-            # Upload original
-            print(f"[upload_to_cloudinary] Uploading to Cloudinary...")
-            upload_result = cloudinary.uploader.upload(
-                image_path,
-                folder=f"geofy/{job_id}",
-                public_id=f"imagery_{year}",
-                resource_type="image"
-            )
-            
-            print(f"[upload_to_cloudinary] Upload successful")
-            print(f"  Public ID: {upload_result['public_id']}")
-            print(f"  Format: {upload_result.get('format', 'unknown')}")
-            print(f"  Size: {upload_result.get('bytes', 0)} bytes")
-            
-            # Generate URLs
-            urls = {
-                'original': upload_result['secure_url'],
-                'optimized': cloudinary.CloudinaryImage(upload_result['public_id']).build_url(
-                    quality="auto",
-                    fetch_format="auto",
-                    secure=True
-                ),
-                'thumbnail': cloudinary.CloudinaryImage(upload_result['public_id']).build_url(
-                    width=400,
-                    height=300,
-                    crop="fill",
-                    secure=True
+
+            # Define S3 key (path in bucket)
+            s3_key = f"geofy/{job_id}/imagery_{year}.png"
+
+            # Upload original to S3
+            print(f"[upload_to_s3] Uploading to S3...")
+            with open(image_path, 'rb') as file_data:
+                s3_client.upload_fileobj(
+                    file_data,
+                    settings.AWS_S3_BUCKET_NAME,
+                    s3_key,
+                    ExtraArgs={
+                        'ContentType': 'image/png',
+                        'ACL': 'public-read'  # Make publicly readable
+                    }
                 )
+
+            print(f"[upload_to_s3] Upload successful")
+            print(f"  S3 Key: {s3_key}")
+            print(f"  Bucket: {settings.AWS_S3_BUCKET_NAME}")
+
+            # Generate public URL
+            base_url = f"https://{settings.AWS_S3_BUCKET_NAME}.s3.{settings.AWS_S3_REGION}.amazonaws.com/{s3_key}"
+
+            # For S3, we return the same URL for all three (original, optimized, thumbnail)
+            # In production, you might want to create actual thumbnails or use CloudFront
+            urls = {
+                'original': base_url,
+                'optimized': base_url,
+                'thumbnail': base_url
             }
-            
-            print(f"[upload_to_cloudinary] URLs generated:")
-            print(f"  Original: {urls['original'][:80]}...")
-            print(f"  Optimized: {urls['optimized'][:80]}...")
-            print(f"  Thumbnail: {urls['thumbnail'][:80]}...")
+
+            print(f"[upload_to_s3] URLs generated:")
+            print(f"  URL: {urls['original'][:80]}...")
             print(f"{'='*60}\n")
-            
+
             return urls
-            
-        except Exception as e:
-            print(f"[upload_to_cloudinary] EXCEPTION: {type(e).__name__}: {str(e)}")
+
+        except ClientError as e:
+            print(f"[upload_to_s3] AWS ERROR: {type(e).__name__}: {str(e)}")
             print(f"{'='*60}\n")
-            raise Exception(f"Failed to upload to Cloudinary: {str(e)}")
+            raise Exception(f"Failed to upload to S3: {str(e)}")
+        except Exception as e:
+            print(f"[upload_to_s3] EXCEPTION: {type(e).__name__}: {str(e)}")
+            print(f"{'='*60}\n")
+            raise Exception(f"Failed to upload to S3: {str(e)}")
     
     def analyze_with_gemini(self, image_paths: List[str], years: Optional[List[int]] = None) -> Dict[str, Any]:
         """Analyze images with Gemini AI"""

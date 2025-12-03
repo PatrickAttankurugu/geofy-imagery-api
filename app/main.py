@@ -88,9 +88,9 @@ async def process_imagery_job(job_id: str, coordinates: str, zoom: int, callback
             # Convert to PNG - returns path like: /temp/jobid_2018-01-01.png
             png_path = imagery_service.convert_geotiff_to_png(tif_path)
             
-            # Upload to Cloudinary
+            # Upload to S3
             year = int(date.split('-')[0])
-            urls = imagery_service.upload_to_cloudinary(png_path, job_id, year)
+            urls = imagery_service.upload_to_s3(png_path, job_id, year)
             
             results.append({
                 'year': year,
