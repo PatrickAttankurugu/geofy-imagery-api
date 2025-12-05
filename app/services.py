@@ -302,8 +302,7 @@ class ImageryService:
                     settings.AWS_S3_BUCKET_NAME,
                     s3_key,
                     ExtraArgs={
-                        'ContentType': 'image/png',
-                        'ACL': 'public-read'  # Make publicly readable
+                        'ContentType': 'image/png'
                     }
                 )
 
